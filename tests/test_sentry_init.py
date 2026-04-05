@@ -4,7 +4,7 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from app import sentry as sentry_mod
+from app.utils import sentry_sdk as sentry_mod
 
 
 def test_init_sentry_noops_without_dsn(monkeypatch) -> None:
