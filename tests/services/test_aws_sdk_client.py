@@ -1,19 +1,27 @@
+from __future__ import annotations
+
 import pytest
 from datetime import datetime
+from types import ModuleType
+import sys
 import botocore.exceptions
 
-import sys
-import os
+mock_modules = [
+    "app.services.coralogix",
+    "app.services.tracer_client",
+    "app.services.datadog",
+    "app.services.elasticsearch",
+]
 
-sys.path.append(os.path.abspath("app/services"))
+for mod in mock_modules:
+    sys.modules[mod] = ModuleType(mod)
 
-from aws_sdk_client import (
+from app.services.aws_sdk_client import (
     _is_operation_allowed,
     _sanitize_response,
     execute_aws_sdk_call,
     MAX_LIST_ITEMS,
 )
-
 
 # ----------------------------
 # 1. _is_operation_allowed()
@@ -194,3 +202,40 @@ def test_param_validation_error(monkeypatch):
 
     assert result["success"] is False
     assert result["metadata"]["error_type"] == "validation"
+    
+def test_client_error(monkeypatch):
+    from botocore.exceptions import ClientError
+
+    def mock_client(service_name, **kwargs):
+        class Fake:
+            def __init__(self):
+                self.meta = type("Meta", (), {"region_name": "us-east-1"})()
+
+            def describe_instances(self):
+                raise ClientError(
+                    {"Error": {"Code": "AccessDenied", "Message": "Denied"}},
+                    "DescribeInstances",
+                )
+
+        return Fake()
+
+    monkeypatch.setattr("boto3.client", mock_client)
+
+    result = execute_aws_sdk_call(
+        service_name="ec2",
+        operation_name="describe_instances",
+    )
+
+    assert result["success"] is False
+    assert result["metadata"]["error_type"] == "client_error"
+
+
+def test_empty_inputs():
+    result = execute_aws_sdk_call("", "")
+
+    assert result["success"] is False
+    assert "required" in result["error"]
+    
+    
+    
+    
