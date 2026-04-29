@@ -1,21 +1,50 @@
 from __future__ import annotations
 
+import sys
+from types import ModuleType
 import pytest
 from datetime import datetime
-from types import ModuleType
-import sys
 import botocore.exceptions
 
-mock_modules = [
-    "app.services.coralogix",
-    "app.services.tracer_client",
-    "app.services.datadog",
-    "app.services.elasticsearch",
-]
 
-for mod in mock_modules:
-    sys.modules[mod] = ModuleType(mod)
+# ----------------------------
+# Generic dynamic mock (handles ANY attribute)
+# ----------------------------
+def create_mock_module(name: str):
+    module = ModuleType(name)
 
+    def __getattr__(attr):
+        return object
+
+    module.__getattr__ = __getattr__
+    return module
+
+
+# ----------------------------
+# Specific mocks where needed
+# ----------------------------
+coralogix_mock = create_mock_module("app.services.coralogix")
+coralogix_mock.CoralogixClient = object
+coralogix_mock.build_coralogix_logs_query = lambda *args, **kwargs: None
+
+tracer_mock = create_mock_module("app.services.tracer_client")
+
+for name in ["AWSBatchJobResult", "LogResult", "PipelineRunSummary", "PipelineSummary"]:
+    setattr(tracer_mock, name, object)
+
+
+# ----------------------------
+# Register mocks
+# ----------------------------
+sys.modules["app.services.coralogix"] = coralogix_mock
+sys.modules["app.services.tracer_client"] = tracer_mock
+sys.modules["app.services.datadog"] = create_mock_module("app.services.datadog")
+sys.modules["app.services.elasticsearch"] = create_mock_module("app.services.elasticsearch")
+
+
+# ----------------------------
+# Actual import (as reviewer wanted)
+# ----------------------------
 from app.services.aws_sdk_client import (
     _is_operation_allowed,
     _sanitize_response,
@@ -26,7 +55,6 @@ from app.services.aws_sdk_client import (
 # ----------------------------
 # 1. _is_operation_allowed()
 # ----------------------------
-
 def test_allowed_operation():
     allowed, reason = _is_operation_allowed("describe_instances")
     assert allowed is True
@@ -48,7 +76,6 @@ def test_not_in_allowlist():
 # ----------------------------
 # 2. _sanitize_response()
 # ----------------------------
-
 def test_sanitize_datetime():
     data = {"time": datetime(2024, 1, 1)}
     result = _sanitize_response(data)
@@ -79,7 +106,6 @@ def test_deep_nesting_limit():
 
     result = _sanitize_response(data)
 
-    # Should hit depth limit
     def contains_truncation(d):
         if isinstance(d, dict):
             return any(contains_truncation(v) for v in d.values())
@@ -106,7 +132,6 @@ def test_tuple_handling():
 # ----------------------------
 # 3. execute_aws_sdk_call()
 # ----------------------------
-
 class FakeClient:
     def __init__(self):
         self.meta = type("Meta", (), {"region_name": "us-east-1"})()
@@ -116,7 +141,6 @@ class FakeClient:
 
 
 def test_execute_success(monkeypatch):
-
     def mock_client(service_name, **kwargs):
         return FakeClient()
 
@@ -145,13 +169,12 @@ def test_operation_not_allowed():
 
 
 def test_missing_operation(monkeypatch):
-
-    class FakeClient:
+    class FakeClientNoOp:
         def __init__(self):
             self.meta = type("Meta", (), {"region_name": "us-east-1"})()
 
     def mock_client(service_name, **kwargs):
-        return FakeClient()
+        return FakeClientNoOp()
 
     monkeypatch.setattr("boto3.client", mock_client)
 
@@ -165,7 +188,6 @@ def test_missing_operation(monkeypatch):
 
 
 def test_credentials_error(monkeypatch):
-
     def mock_client(service_name, **kwargs):
         raise botocore.exceptions.NoCredentialsError()
 
@@ -181,7 +203,6 @@ def test_credentials_error(monkeypatch):
 
 
 def test_param_validation_error(monkeypatch):
-
     def mock_client(service_name, **kwargs):
         class Fake:
             def __init__(self):
@@ -202,7 +223,8 @@ def test_param_validation_error(monkeypatch):
 
     assert result["success"] is False
     assert result["metadata"]["error_type"] == "validation"
-    
+
+
 def test_client_error(monkeypatch):
     from botocore.exceptions import ClientError
 
@@ -235,7 +257,3 @@ def test_empty_inputs():
 
     assert result["success"] is False
     assert "required" in result["error"]
-    
-    
-    
-    
