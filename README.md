@@ -1,7 +1,7 @@
 <div align="center">
 
 <p align="center">
-  <img src="docs/logo/opensre-logomark-full.svg" alt="OpenSRE" width="360" />
+  <img src="docs/logo/opensre-logo-white.svg" alt="OpenSRE" width="360" />
 </p>
 
 <h1>OpenSRE: Build Your Own AI SRE Agents</h1>
@@ -89,8 +89,18 @@ Our mission is to build AI SRE agents on top of this, scale it to thousands of r
 
 ## Install
 
+The root installer URL auto-detects Unix shell vs PowerShell. Add `--main` when you want the latest rolling build from `main` instead of the latest stable release.
+
+Latest stable release:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.sh | bash
+curl -fsSL https://install.opensre.com | bash
+```
+
+Latest build from `main`:
+
+```bash
+curl -fsSL https://install.opensre.com | bash -s -- --main
 ```
 
 ```bash
@@ -98,7 +108,7 @@ brew install Tracer-Cloud/opensre/opensre
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/Tracer-Cloud/opensre/main/install.ps1 | iex
+irm https://install.opensre.com | iex
 ```
 
 <!--
@@ -115,6 +125,22 @@ opensre onboard
 opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
 opensre update
 ```
+
+### Interactive mode
+
+Running `opensre` with no arguments enters a persistent REPL session — an incident response terminal in the style of Claude Code. Describe an alert in plain text, watch the investigation stream live, then ask follow-up questions that stay grounded in what just ran.
+
+```bash
+opensre
+# › MongoDB orders cluster is dropping connections since 14:00 UTC
+# ...live streaming investigation...
+# › why was the connection pool exhausted?
+# ...grounded follow-up answer...
+# › /status
+# › /exit
+```
+
+Slash commands: `/help`, `/status`, `/clear`, `/reset`, `/trust`, `/exit`. Ctrl+C cancels an in-flight investigation while keeping the session state intact.
 
 ---
 
@@ -181,7 +207,12 @@ If you use VS Code, the repo now includes a ready-to-use devcontainer under [`.d
 
 ## How OpenSRE Works
 
-<img src="https://github.com/user-attachments/assets/04234934-c603-491e-a08f-b145d1158d7a" width="1064" alt="opensre-how-it-works" style="border-radius: 0" />
+<img 
+  src="https://github.com/user-attachments/assets/936ab1f2-9bda-438d-9897-e8e9cd98e335" 
+  width="1064" 
+  height="568" 
+  alt="opensre-how-it-works-github" 
+/>
 
 ### Investigation Workflow
 
@@ -1011,6 +1042,50 @@ Thanks goes to these amazing people:
             <img src="https://avatars.githubusercontent.com/u/90125084?v=4" width="100" alt="Genmin"/>
             <br />
             <sub><b>Genmin</b></sub>
+        </a>
+    </td>
+		</tr>
+		<tr>
+            <td align="center">
+        <a href="https://github.com/WatchTree-19">
+            <img src="https://avatars.githubusercontent.com/u/119982314?v=4" width="100" alt="WatchTree-19"/>
+            <br />
+            <sub><b>WatchTree-19</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/cokerrd">
+            <img src="https://avatars.githubusercontent.com/u/82083946?v=4" width="100" alt="cokerrd"/>
+            <br />
+            <sub><b>cokerrd</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/jason8745">
+            <img src="https://avatars.githubusercontent.com/u/41944427?v=4" width="100" alt="jason8745"/>
+            <br />
+            <sub><b>jason8745</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Yajush-afk">
+            <img src="https://avatars.githubusercontent.com/u/180868061?v=4" width="100" alt="Yajush-afk"/>
+            <br />
+            <sub><b>Yajush-afk</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/Aaryan-549">
+            <img src="https://avatars.githubusercontent.com/u/165829168?v=4" width="100" alt="Aaryan-549"/>
+            <br />
+            <sub><b>Aaryan-549</b></sub>
+        </a>
+    </td>
+            <td align="center">
+        <a href="https://github.com/CoderHariswar">
+            <img src="https://avatars.githubusercontent.com/u/113418253?v=4" width="100" alt="CoderHariswar"/>
+            <br />
+            <sub><b>CoderHariswar</b></sub>
         </a>
     </td>
 		</tr>

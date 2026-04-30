@@ -20,6 +20,7 @@ from app.integrations.gitlab import DEFAULT_GITLAB_BASE_URL, build_gitlab_config
 from app.integrations.mariadb import build_mariadb_config
 from app.integrations.models import (
     AlertmanagerIntegrationConfig,
+    ArgoCDIntegrationConfig,
     AWSIntegrationConfig,
     CoralogixIntegrationConfig,
     DatadogIntegrationConfig,
@@ -30,6 +31,7 @@ from app.integrations.models import (
     JiraIntegrationConfig,
     OpsGenieIntegrationConfig,
     SlackWebhookConfig,
+    SplunkIntegrationConfig,
     TelegramBotConfig,
 )
 from app.integrations.mongodb import build_mongodb_config
@@ -90,8 +92,10 @@ _SERVICE_KEY_MAP = {
     "opensearch": "opensearch",
     "open search": "opensearch",
     "alertmanager": "alertmanager",
+    "splunk": "splunk",
     "airflow": "airflow",
     "apache airflow": "airflow",
+    "argocd": "argocd",
 }
 
 
@@ -645,6 +649,30 @@ def _classify_service_instance(
             return alertmanager_config.model_dump(), "alertmanager"
         return None, None
 
+    if key == "argocd":
+        try:
+            argocd_config = ArgoCDIntegrationConfig.model_validate(
+                {
+                    "base_url": credentials.get("base_url", ""),
+                    "bearer_token": credentials.get("bearer_token", "")
+                    or credentials.get("auth_token", "")
+                    or credentials.get("token", ""),
+                    "username": credentials.get("username", ""),
+                    "password": credentials.get("password", ""),
+                    "project": credentials.get("project", ""),
+                    "app_namespace": credentials.get("app_namespace", ""),
+                    "verify_ssl": credentials.get("verify_ssl", True),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if argocd_config.base_url and (
+            argocd_config.bearer_token or (argocd_config.username and argocd_config.password)
+        ):
+            return argocd_config.model_dump(), "argocd"
+        return None, None
+
     if key == "bitbucket":
         workspace = str(credentials.get("workspace", "")).strip()
         if not workspace:
@@ -730,6 +758,24 @@ def _classify_service_instance(
             "max_results": max(1, min(safe_int(credentials.get("max_results", 100), 100), 500)),
             "integration_id": record_id,
         }, "opensearch"
+
+    if key == "splunk":
+        try:
+            splunk_config = SplunkIntegrationConfig.model_validate(
+                {
+                    "base_url": credentials.get("base_url", ""),
+                    "token": credentials.get("token", ""),
+                    "index": credentials.get("index", "main"),
+                    "verify_ssl": credentials.get("verify_ssl", True),
+                    "ca_bundle": credentials.get("ca_bundle", ""),
+                    "integration_id": record_id,
+                }
+            )
+        except Exception:
+            return None, None
+        if splunk_config.base_url and splunk_config.token:
+            return splunk_config.model_dump(), "splunk"
+        return None, None
 
     # Fallback for unknown services: pass through credentials + record id.
     return {"credentials": credentials, "integration_id": record_id}, key
@@ -1063,6 +1109,43 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 "credentials": postgresql_config.model_dump(exclude={"integration_id"}),
             }
         )
+
+    argocd_multi = _parse_instances_env("ARGOCD_INSTANCES", "argocd")
+    if argocd_multi is not None:
+        integrations.append(argocd_multi)
+        argocd_base_url = ""
+        argocd_auth_token = ""
+        argocd_username = ""
+        argocd_password = ""
+    else:
+        argocd_base_url = os.getenv("ARGOCD_BASE_URL", "").strip()
+        argocd_auth_token = os.getenv("ARGOCD_AUTH_TOKEN", os.getenv("ARGOCD_TOKEN", "")).strip()
+        argocd_username = os.getenv("ARGOCD_USERNAME", "").strip()
+        argocd_password = os.getenv("ARGOCD_PASSWORD", "").strip()
+    if argocd_base_url and (argocd_auth_token or (argocd_username and argocd_password)):
+        try:
+            argocd_config = ArgoCDIntegrationConfig.model_validate(
+                {
+                    "base_url": argocd_base_url,
+                    "bearer_token": argocd_auth_token,
+                    "username": argocd_username,
+                    "password": argocd_password,
+                    "project": os.getenv("ARGOCD_PROJECT", "").strip(),
+                    "app_namespace": os.getenv("ARGOCD_APP_NAMESPACE", "").strip(),
+                    "verify_ssl": os.getenv("ARGOCD_VERIFY_SSL", "true").strip(),
+                }
+            )
+        except Exception:
+            pass
+        else:
+            integrations.append(
+                {
+                    "id": "env-argocd",
+                    "service": "argocd",
+                    "status": "active",
+                    "credentials": argocd_config.model_dump(exclude={"integration_id"}),
+                }
+            )
 
     vercel_api_token = os.getenv("VERCEL_API_TOKEN", "").strip()
     if vercel_api_token:
@@ -1474,6 +1557,31 @@ def load_env_integrations() -> list[dict[str, Any]]:
         except Exception:
             logger.debug("Failed to load Alertmanager config from env", exc_info=True)
 
+    splunk_multi = _parse_instances_env("SPLUNK_INSTANCES", "splunk")
+    if splunk_multi is not None:
+        integrations.append(splunk_multi)
+    else:
+        splunk_url = os.getenv("SPLUNK_URL", "").strip()
+        splunk_token = os.getenv("SPLUNK_TOKEN", "").strip()
+        if splunk_url and splunk_token:
+            splunk_config = SplunkIntegrationConfig.model_validate(
+                {
+                    "base_url": splunk_url,
+                    "token": splunk_token,
+                    "index": os.getenv("SPLUNK_INDEX", "main").strip(),
+                    "verify_ssl": os.getenv("SPLUNK_VERIFY_SSL", "true").strip().lower() != "false",
+                    "ca_bundle": os.getenv("SPLUNK_CA_BUNDLE", "").strip(),
+                }
+            )
+            integrations.append(
+                {
+                    "id": "env-splunk",
+                    "service": "splunk",
+                    "status": "active",
+                    "credentials": splunk_config.model_dump(exclude={"integration_id"}),
+                }
+            )
+
     return integrations
 
 
@@ -1574,7 +1682,9 @@ def resolve_effective_integrations(
         "openobserve",
         "opensearch",
         "alertmanager",
+        "splunk",
         "airflow",
+        "argocd",
     )
     for service in direct_services:
         resolved_integration = classified_integrations.get(service)

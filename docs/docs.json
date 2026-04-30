@@ -81,7 +81,8 @@
               "grafana",
               "honeycomb",
               "opsgenie",
-              "sentry"
+              "sentry",
+              "splunk"
             ]
           },
           {
@@ -300,7 +301,7 @@
     "metatags": {}
   },
   "logo": {
-    "light": "/images/logo/tracer/opensre-docs-logo-dark.svg",
-    "dark": "/images/logo/tracer/opensre-docs-logo-light.svg"
+    "light": "/images/opensre-logo-black.svg",
+    "dark": "/images/opensre-logo-black.svg"
   }
 }
