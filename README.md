@@ -1166,6 +1166,13 @@ Thanks goes to these amazing people:
             <sub><b>akshat1074</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/Diwansu-pilania">
+            <img src="https://avatars.githubusercontent.com/u/192974860?v=4" width="100" alt="Diwansu-pilania"/>
+            <br />
+            <sub><b>Diwansu-pilania</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
