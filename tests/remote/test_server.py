@@ -367,7 +367,8 @@ def test_check_memory_health_returns_missing_when_proc_file_absent(
 ) -> None:
 
     class _FakeMeminfoPath:
-        def __init__(self, *_args, **_kwargs) -> None: ...
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
         def exists(self) -> bool:
             return False
 
@@ -385,7 +386,8 @@ def test_check_memory_health_returns_missing_when_memavailable_absent(
 ) -> None:
 
     class _FakeIncompletePath:
-        def __init__(self, *_args: object, **_kwargs: object) -> None: ...
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
         def exists(self) -> bool:
             return True
 
@@ -405,7 +407,8 @@ def test_check_memory_health_returns_missing_on_oserror(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _FakeOsErrorPath:
-        def __init__(self, *_args: object, **_kwargs: object) -> None: ...
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            pass
         def exists(self) -> bool:
             return True
 

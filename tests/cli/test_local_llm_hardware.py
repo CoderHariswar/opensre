@@ -8,8 +8,6 @@ All tests are platform-independent: the real host OS is never consulted.
 """
 
 from __future__ import annotations
-
-import sys
 from unittest.mock import mock_open, patch
 
 import pytest
