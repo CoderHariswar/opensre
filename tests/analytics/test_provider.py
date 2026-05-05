@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
 from typing import NoReturn
 
@@ -16,16 +17,23 @@ from app.analytics.events import Event
 
 
 @pytest.fixture(autouse=True)
-def _reset_anonymous_id_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def _reset_anonymous_id_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
+    provider.shutdown_analytics(flush=False)
+    provider._instance = None
+    monkeypatch.delenv("OPENSRE_NO_TELEMETRY", raising=False)
     provider._cached_anonymous_id = None
     provider._cached_identity_persistence = "unknown"
     provider._first_run_marker_created_this_process = False
     provider._pending_user_id_load_failures.clear()
     monkeypatch.setattr(provider, "_event_log_state", provider._EventLogState())
+    monkeypatch.setattr(provider, "_FIRST_RUN_PATH", tmp_path / "installed")
     legacy_dir = tmp_path / "legacy-opensre"
     monkeypatch.setattr(provider, "_LEGACY_CONFIG_DIR", legacy_dir)
     monkeypatch.setattr(provider, "_LEGACY_ANONYMOUS_ID_PATH", legacy_dir / "anonymous_id")
     monkeypatch.setattr(provider, "_LEGACY_FIRST_RUN_PATH", legacy_dir / "installed")
+    yield
+    provider.shutdown_analytics(flush=False)
+    provider._instance = None
 
 
 class _StubAnalytics:
@@ -89,6 +97,29 @@ def test_capture_first_run_if_needed_uses_same_install_guard(monkeypatch, tmp_pa
     provider.capture_first_run_if_needed()
 
     assert stub.events == [(Event.INSTALL_DETECTED, None)]
+
+
+def test_capture_install_detected_initializes_identity_before_install_marker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("OPENSRE_ANALYTICS_DISABLED", raising=False)
+    monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+    monkeypatch.setattr(provider, "_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(provider, "_ANONYMOUS_ID_PATH", tmp_path / "anonymous_id")
+    monkeypatch.setattr(provider, "_FIRST_RUN_PATH", tmp_path / "installed")
+    monkeypatch.setattr(provider.atexit, "register", lambda _func: None)
+    posted_payloads = _stub_httpx_client(monkeypatch)
+
+    captured = provider.capture_install_detected_if_needed(
+        {"install_source": "make_install", "entrypoint": "make install"}
+    )
+    provider.shutdown_analytics(flush=True)
+
+    assert captured is True
+    assert (tmp_path / "anonymous_id").exists()
+    assert (tmp_path / "installed").exists()
+    events = [payload["json"]["event"] for payload in posted_payloads]
+    assert events == [Event.INSTALL_DETECTED.value]
 
 
 def test_get_or_create_anonymous_id_reuses_persisted_value(monkeypatch, tmp_path: Path) -> None:
@@ -717,12 +748,42 @@ def test_shutdown_is_idempotent_and_capture_after_shutdown_is_noop(
     assert len(posted_payloads) == sent_before_post_shutdown_capture == 1
 
 
+def test_analytics_post_shutdown_capture_is_safe_noop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("OPENSRE_NO_TELEMETRY", raising=False)
+    monkeypatch.delenv("OPENSRE_ANALYTICS_DISABLED", raising=False)
+    monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+    monkeypatch.setattr(provider, "_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(provider, "_ANONYMOUS_ID_PATH", tmp_path / "anonymous_id")
+    monkeypatch.setattr(provider.atexit, "register", lambda _func: None)
+
+    analytics = provider.Analytics()
+    assert analytics._disabled is False
+    analytics.shutdown(flush=False)
+
+    analytics.capture(Event.INSTALL_DETECTED)
+
+    assert analytics._pending == 0
+
+
 def test_shutdown_analytics_is_noop_when_singleton_not_initialized(monkeypatch) -> None:
     monkeypatch.setattr(provider, "_instance", None)
 
     provider.shutdown_analytics(flush=False)
 
     assert provider._instance is None
+
+
+def test_analytics_is_disabled_when_no_telemetry_env_var_is_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OPENSRE_NO_TELEMETRY=1 must opt out; smoke tests rely on it."""
+    monkeypatch.setenv("OPENSRE_NO_TELEMETRY", "1")
+
+    analytics = provider.Analytics()
+
+    assert analytics._disabled is True
 
 
 def test_event_log_path_resolves_under_config_dir(monkeypatch, tmp_path: Path) -> None:

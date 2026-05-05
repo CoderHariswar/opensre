@@ -98,7 +98,9 @@ _ONE_TIME_EVENTS: Final[frozenset[str]] = frozenset({Event.INSTALL_DETECTED.valu
 
 def _is_opted_out() -> bool:
     return (
-        os.getenv("OPENSRE_ANALYTICS_DISABLED", "0") == "1" or os.getenv("DO_NOT_TRACK", "0") == "1"
+        os.getenv("OPENSRE_NO_TELEMETRY", "0") == "1"
+        or os.getenv("OPENSRE_ANALYTICS_DISABLED", "0") == "1"
+        or os.getenv("DO_NOT_TRACK", "0") == "1"
     )
 
 
@@ -770,9 +772,12 @@ def shutdown_analytics(*, flush: bool = True) -> None:
 
 def capture_install_detected_if_needed(properties: Properties | None = None) -> bool:
     """Capture ``install_detected`` once per persisted OpenSRE home."""
+    if _path_exists(_FIRST_RUN_PATH):
+        return False
+    analytics = get_analytics()
     if not _touch_once(_FIRST_RUN_PATH):
         return False
-    get_analytics().capture(Event.INSTALL_DETECTED, properties)
+    analytics.capture(Event.INSTALL_DETECTED, properties)
     return True
 
 
