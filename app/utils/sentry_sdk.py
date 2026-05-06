@@ -14,6 +14,8 @@ from functools import cache
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from app.analytics.events import Event
+from app.analytics.provider import get_analytics
 from app.constants import (
     SENTRY_DSN,
     SENTRY_ERROR_SAMPLE_RATE,
@@ -143,6 +145,14 @@ def _before_breadcrumb(crumb: dict[str, Any], _hint: dict[str, Any]) -> dict[str
     return crumb
 
 
+def _capture_sentry_init_skipped(reason: str, *, error_type: str | None = None) -> None:
+    properties: dict[str, str] = {"reason": reason}
+    if error_type is not None:
+        properties["error_type"] = error_type
+    with suppress(Exception):
+        get_analytics().capture(Event.SENTRY_INIT_SKIPPED, properties)
+
+
 @cache
 def _init_sentry_once(
     dsn: str,
@@ -177,24 +187,32 @@ def init_sentry() -> None:
     ``OPENSRE_ANALYTICS_DISABLED=1`` disables PostHog only.
     """
     if _is_sentry_disabled():
+        _capture_sentry_init_skipped("telemetry_disabled")
         return
 
     from app.config import get_environment
     from app.version import get_version
 
-    _init_sentry_once(
-        dsn=_resolved_dsn(),
-        environment=get_environment().value,
-        release=f"opensre@{get_version()}",
-        sample_rate=_sample_rate_from_env(
-            "SENTRY_ERROR_SAMPLE_RATE",
-            SENTRY_ERROR_SAMPLE_RATE,
-        ),
-        traces_sample_rate=_sample_rate_from_env(
-            "SENTRY_TRACES_SAMPLE_RATE",
-            SENTRY_TRACES_SAMPLE_RATE,
-        ),
-    )
+    try:
+        _init_sentry_once(
+            dsn=_resolved_dsn(),
+            environment=get_environment().value,
+            release=f"opensre@{get_version()}",
+            sample_rate=_sample_rate_from_env(
+                "SENTRY_ERROR_SAMPLE_RATE",
+                SENTRY_ERROR_SAMPLE_RATE,
+            ),
+            traces_sample_rate=_sample_rate_from_env(
+                "SENTRY_TRACES_SAMPLE_RATE",
+                SENTRY_TRACES_SAMPLE_RATE,
+            ),
+        )
+    except ModuleNotFoundError:
+        _capture_sentry_init_skipped("missing_sdk", error_type="ModuleNotFoundError")
+        raise
+    except Exception as exc:
+        _capture_sentry_init_skipped("init_error", error_type=type(exc).__name__)
+        raise
 
 
 def capture_exception(exc: BaseException) -> None:

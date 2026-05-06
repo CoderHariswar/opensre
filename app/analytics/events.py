@@ -10,6 +10,7 @@ class Event(StrEnum):
     CLI_INVOKED = "cli_invoked"
     INSTALL_DETECTED = "install_detected"
     USER_ID_LOAD_FAILED = "user_id_load_failed"
+    SENTRY_INIT_SKIPPED = "sentry_init_skipped"
 
     # Onboarding
     ONBOARD_STARTED = "onboard_started"
