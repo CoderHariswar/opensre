@@ -1302,6 +1302,13 @@ Thanks goes to these amazing people:
             <sub><b>mazenessam77</b></sub>
         </a>
     </td>
+            <td align="center">
+        <a href="https://github.com/mstejas610">
+            <img src="https://avatars.githubusercontent.com/u/116860222?v=4" width="100" alt="mstejas610"/>
+            <br />
+            <sub><b>mstejas610</b></sub>
+        </a>
+    </td>
 		</tr>
 	</tbody>
 </table>
