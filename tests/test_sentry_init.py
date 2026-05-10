@@ -683,7 +683,7 @@ def test_apply_scope_tags_is_first_wins(monkeypatch) -> None:
         call.args[1] for call in tag_mock.call_args_list if call.args[0] == "entrypoint"
     ]
     assert entrypoint_tags == ["webapp"]
-    
+
 def test_init_sentry_registers_logging_integration(monkeypatch) -> None:
     from sentry_sdk.integrations.logging import LoggingIntegration
 
