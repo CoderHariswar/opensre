@@ -683,3 +683,45 @@ def test_apply_scope_tags_is_first_wins(monkeypatch) -> None:
         call.args[1] for call in tag_mock.call_args_list if call.args[0] == "entrypoint"
     ]
     assert entrypoint_tags == ["webapp"]
+    
+def test_init_sentry_registers_logging_integration(monkeypatch) -> None:
+    from sentry_sdk.integrations.logging import LoggingIntegration
+
+    sentry_mod._init_sentry_once.cache_clear()
+    _clear_kill_switches(monkeypatch)
+
+    monkeypatch.setattr(
+        sentry_mod,
+        "_build_sentry_integrations",
+        lambda: [LoggingIntegration()],
+    )
+
+    init_mock, _ = _install_full_sentry_mock(monkeypatch)
+
+    sentry_mod.init_sentry(entrypoint="cli")
+
+    integrations = init_mock.call_args.kwargs["integrations"]
+
+    integration_names = {
+        integration.__class__.__name__
+        for integration in integrations
+    }
+
+    assert "LoggingIntegration" in integration_names
+
+def test_init_sentry_skips_logging_integration_when_disabled(
+    monkeypatch,
+) -> None:
+    sentry_mod._init_sentry_once.cache_clear()
+    _clear_kill_switches(monkeypatch)
+    monkeypatch.setenv("OPENSRE_SENTRY_LOGGING_DISABLED", "1")
+    init_mock, _ = _install_full_sentry_mock(monkeypatch)
+
+    sentry_mod.init_sentry(entrypoint="cli")
+
+    integrations = init_mock.call_args.kwargs["integrations"]
+
+    assert all(
+        integration.__class__.__name__ != "LoggingIntegration"
+        for integration in integrations
+    )
