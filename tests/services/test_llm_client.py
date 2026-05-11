@@ -1032,6 +1032,21 @@ def test_create_llm_client_missing_api_key_raises_runtime_error(monkeypatch) -> 
         llm_client.reset_llm_singletons()
 
 
+def test_create_llm_client_missing_api_key_omits_pydantic_boilerplate(monkeypatch) -> None:
+    """Sentry #1815: the RuntimeError message must not include pydantic boilerplate."""
+    monkeypatch.setenv("LLM_PROVIDER", "minimax")
+    monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+    llm_client.reset_llm_singletons()
+    try:
+        with pytest.raises(RuntimeError) as exc_info:
+            llm_client._create_llm_client("reasoning")
+        msg = str(exc_info.value)
+        assert "1 validation error for LLMSettings" not in msg
+        assert "MINIMAX_API_KEY" in msg
+    finally:
+        llm_client.reset_llm_singletons()
+
+
 # ---------------------------------------------------------------------------
 # LLMClient.invoke / invoke_stream — NotFoundError handling
 # ---------------------------------------------------------------------------
@@ -1674,6 +1689,79 @@ def test_bedrock_invoke_converse_hard_client_errors_raise_immediately(
         client.invoke("hello")
 
     assert sleeps == [], "non-transient errors must not be retried"
+
+
+def test_bedrock_access_denied_surfaces_upstream_aws_message(monkeypatch) -> None:
+    """``AccessDeniedException`` on Bedrock can also indicate an AWS
+    Marketplace billing problem (e.g. ``INVALID_PAYMENT_INSTRUMENT``) or a
+    missing per-model Bedrock opt-in, not just IAM. The wrapped
+    ``RuntimeError`` must include the upstream AWS ``Message`` so the user
+    knows which one to fix. Regression coverage for #1808."""
+    monkeypatch.setattr(
+        "app.guardrails.engine.get_guardrail_engine",
+        _InactiveGuardrailEngine,
+    )
+    monkeypatch.setattr(llm_client.time, "sleep", lambda _s: None)
+
+    import botocore.exceptions
+
+    aws_message = (
+        "Model access is denied due to INVALID_PAYMENT_INSTRUMENT:"
+        "A valid payment instrument must be provided."
+    )
+    boto_err = botocore.exceptions.ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": aws_message}},
+        "Converse",
+    )
+
+    class _FailingRuntime:
+        def converse(self, **_kwargs):
+            raise boto_err
+
+    monkeypatch.setattr(llm_client.boto3, "client", lambda *_a, **_k: _FailingRuntime())
+
+    client = llm_client.BedrockLLMClient(model="some-model")
+    with pytest.raises(RuntimeError) as excinfo:
+        client.invoke("hello")
+
+    rendered = str(excinfo.value)
+    assert "INVALID_PAYMENT_INSTRUMENT" in rendered
+    assert "payment instrument" in rendered.lower()
+    assert "AWS Marketplace" in rendered
+
+
+def test_bedrock_access_denied_without_payment_keywords_shows_iam_checklist(
+    monkeypatch,
+) -> None:
+    """Other AccessDenied messages keep the broader Bedrock/IAM/marketplace checklist."""
+    monkeypatch.setattr(
+        "app.guardrails.engine.get_guardrail_engine",
+        _InactiveGuardrailEngine,
+    )
+    monkeypatch.setattr(llm_client.time, "sleep", lambda _s: None)
+
+    import botocore.exceptions
+
+    aws_message = "User: arn:aws:iam::123:user/x is not authorized to perform: bedrock:InvokeModel"
+    boto_err = botocore.exceptions.ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": aws_message}},
+        "Converse",
+    )
+
+    class _FailingRuntime:
+        def converse(self, **_kwargs):
+            raise boto_err
+
+    monkeypatch.setattr(llm_client.boto3, "client", lambda *_a, **_k: _FailingRuntime())
+
+    client = llm_client.BedrockLLMClient(model="some-model")
+    with pytest.raises(RuntimeError) as excinfo:
+        client.invoke("hello")
+
+    rendered = str(excinfo.value)
+    assert aws_message in rendered
+    assert "Bedrock model access" in rendered
+    assert "IAM permissions" in rendered
 
 
 def test_format_openai_connection_error_ssl_via_cause() -> None:
