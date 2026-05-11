@@ -67,7 +67,7 @@ def _is_sentry_disabled() -> bool:
 
 
 def _is_sentry_logging_disabled() -> bool:
-    """Checking Sentry Disable login"""
+    """Return whether Sentry logging is disabled via the env flag."""
     return os.getenv("OPENSRE_SENTRY_LOGGING_DISABLED", "0") == "1"
 
 
