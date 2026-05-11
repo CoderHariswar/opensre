@@ -390,7 +390,7 @@ def init_sentry(entrypoint: str | None = None) -> None:
     ``DO_NOT_TRACK=1`` to disable both Sentry and PostHog product analytics.
     ``OPENSRE_SENTRY_DISABLED=1`` disables Sentry only;
     ``OPENSRE_SENTRY_LOGGING_DISABLED=1`` disables automatic
-        logger forwarding while preserving explicit ``capture_exception`` calls.
+    logger forwarding while preserving explicit ``capture_exception`` calls.
     ``OPENSRE_ANALYTICS_DISABLED=1`` disables PostHog only.
 
     ``entrypoint`` identifies the calling surface (``cli``, ``webapp``,
