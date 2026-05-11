@@ -67,7 +67,7 @@ def _is_sentry_disabled() -> bool:
 
 
 def _is_sentry_logging_disabled() -> bool:
-    """Checking Sentry Disable login"""
+    """Return True when automatic Sentry logging integration is disabled."""
     return os.getenv("OPENSRE_SENTRY_LOGGING_DISABLED", "0") == "1"
 
 
