@@ -715,11 +715,11 @@ def test_init_sentry_registers_logging_integration(monkeypatch) -> None:
 
     sentry_mod._init_sentry_once.cache_clear()
     sentry_mod._init_sentry_once(
-    dsn="https://test@example.com/1",
-    environment="test",
-    release="opensre@test",
-    sample_rate=1.0,
-    traces_sample_rate=1.0,
+        dsn="https://test@example.com/1",
+        environment="test",
+        release="opensre@test",
+        sample_rate=1.0,
+        traces_sample_rate=1.0,
     )
     assert sentry_init_calls
     integrations = sentry_init_calls[0]["integrations"]
