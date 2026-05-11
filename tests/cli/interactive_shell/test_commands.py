@@ -3,21 +3,24 @@
 from __future__ import annotations
 
 import io
+import sys
 from pathlib import Path
 
 import pytest
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
+from app.cli.interactive_shell import command_registry as registry_module
 from app.cli.interactive_shell.command_registry import repl_data as repl_data_module
+from app.cli.interactive_shell.command_registry import types as command_types
 from app.cli.interactive_shell.command_registry.investigation import (
     _validate_investigate_args,
     _validate_save_args,
 )
 from app.cli.interactive_shell.command_registry.tasks_cmds import _validate_cancel_args
 from app.cli.interactive_shell.commands import SLASH_COMMANDS, dispatch_slash
-from app.cli.interactive_shell.session import ReplSession
-from app.cli.interactive_shell.tasks import TaskKind, TaskStatus
+from app.cli.interactive_shell.runtime.session import ReplSession
+from app.cli.interactive_shell.runtime.tasks import TaskKind, TaskStatus
 
 
 def _capture() -> tuple[Console, io.StringIO]:
@@ -143,9 +146,41 @@ class TestDispatchSlash:
         assert dispatch_slash("/made-up", session, console) is True
         assert "unknown command" in buf.getvalue()
 
+    def test_unknown_command_suggests_close_match(self) -> None:
+        session = ReplSession()
+        console, buf = _capture()
+        assert dispatch_slash("/modle", session, console) is True
+        output = buf.getvalue()
+        assert "unknown command" in output
+        assert "Did you mean" in output
+        assert "/model" in output
+
     def test_local_llm_is_not_a_builtin_slash_action(self) -> None:
         assert "/local-llm" not in SLASH_COMMANDS
         assert "/local_llm" not in SLASH_COMMANDS
+
+    def test_slash_commands_proxy_reads_current_registry(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        command = command_types.SlashCommand("/hot", "hot reload test", lambda *_args: True)
+        monkeypatch.setattr(registry_module, "SLASH_COMMANDS", {"/hot": command})
+
+        assert SLASH_COMMANDS.get("/hot") is command
+        assert list(SLASH_COMMANDS) == ["/hot"]
+
+    def test_dispatch_slash_proxy_calls_current_registry(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[str] = []
+
+        def _fake_dispatch(command_line: str, *_args: object, **_kwargs: object) -> bool:
+            calls.append(command_line)
+            return False
+
+        monkeypatch.setattr(registry_module, "dispatch_slash", _fake_dispatch)
+
+        assert dispatch_slash("/hot", ReplSession(), _capture()[0]) is False
+        assert calls == ["/hot"]
 
     def test_empty_input_is_noop(self) -> None:
         session = ReplSession()
@@ -1275,3 +1310,135 @@ class TestCliDelegatedCommands:
         monkeypatch.setattr(m, "run_cli_command", _fake_run_cli_command)
         dispatch_slash(command, ReplSession(), Console())
         assert captured == [expected_args]
+
+    def test_tests_run_subcommand_starts_background_task(self, monkeypatch: object) -> None:
+        from app.cli.interactive_shell.command_registry import cli_parity as m
+
+        started: list[tuple[str, list[str], TaskKind, bool]] = []
+
+        def _fake_start_background_cli_task(
+            *,
+            display_command: str,
+            argv_list: list[str],
+            session: ReplSession,
+            console: Console,
+            timeout_seconds: int,
+            kind: TaskKind,
+            use_pty: bool,
+        ) -> object:
+            del session, console, timeout_seconds
+            started.append((display_command, argv_list, kind, use_pty))
+            return object()
+
+        monkeypatch.setattr(m, "start_background_cli_task", _fake_start_background_cli_task)
+        dispatch_slash("/tests synthetic --scenario 001-replication-lag", ReplSession(), Console())
+
+        assert started == [
+            (
+                "opensre tests synthetic --scenario 001-replication-lag",
+                [
+                    sys.executable,
+                    "-m",
+                    "app.cli",
+                    "tests",
+                    "synthetic",
+                    "--scenario",
+                    "001-replication-lag",
+                ],
+                TaskKind.SYNTHETIC_TEST,
+                True,
+            )
+        ]
+
+    def test_tests_picker_closes_selection_file_before_subprocess(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        from app.cli.interactive_shell.command_registry import cli_parity as m
+
+        selection_path = tmp_path / "selection.json"
+
+        class _SelectionFile:
+            name = str(selection_path)
+            closed = False
+
+            def __init__(self) -> None:
+                selection_path.touch()
+
+            def close(self) -> None:
+                self.closed = True
+
+        handle = _SelectionFile()
+        started: list[str] = []
+
+        def _fake_run(_command: list[str], **kwargs: object) -> object:
+            assert handle.closed is True
+            env = kwargs["env"]
+            assert isinstance(env, dict)
+            selection_path.write_text(
+                '[{"command": ["opensre", "tests", "synthetic"], '
+                '"command_display": "opensre tests synthetic"}]',
+                encoding="utf-8",
+            )
+
+            class _Result:
+                returncode = 0
+
+            return _Result()
+
+        monkeypatch.setattr(m.tempfile, "NamedTemporaryFile", lambda **_kwargs: handle)
+        monkeypatch.setattr(m.subprocess, "run", _fake_run)
+        monkeypatch.setattr(
+            m,
+            "start_background_cli_task",
+            lambda **kwargs: started.append(kwargs["display_command"]),
+        )
+
+        dispatch_slash("/tests", ReplSession(), Console())
+
+        assert started == ["opensre tests synthetic"]
+        assert not selection_path.exists()
+
+    def test_tests_flag_first_invocation_delegates_to_cli(self, monkeypatch: object) -> None:
+        from app.cli.interactive_shell.command_registry import cli_parity as m
+
+        delegated: list[list[str]] = []
+        monkeypatch.setattr(
+            m,
+            "run_cli_command",
+            lambda _console, args, **_kwargs: (delegated.append(args), True)[1],
+        )
+
+        dispatch_slash("/tests --help", ReplSession(), Console())
+
+        assert delegated == [["tests", "--help"]]
+
+    def test_tests_subcommand_typo_suggests_synthetic(self, monkeypatch: object) -> None:
+        from app.cli.interactive_shell.command_registry import cli_parity as m
+
+        delegated: list[list[str]] = []
+        started: list[list[str]] = []
+
+        monkeypatch.setattr(
+            m,
+            "run_cli_command",
+            lambda _console, args, **_kwargs: (delegated.append(args), True)[1],
+        )
+        monkeypatch.setattr(
+            m,
+            "start_background_cli_task",
+            lambda **kwargs: started.append(kwargs["argv_list"]),
+        )
+
+        session = ReplSession()
+        console, buf = _capture()
+        dispatch_slash("/tests synthetics", session, console)
+
+        output = buf.getvalue()
+        assert "unknown tests subcommand" in output
+        assert "Did you mean" in output
+        assert "/tests synthetic" in output
+        assert session.history[-1]["ok"] is False
+        assert delegated == []
+        assert started == []
