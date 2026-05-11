@@ -81,7 +81,7 @@ def _is_sentry_disabled() -> bool:
 
 
 def _is_sentry_logging_disabled() -> bool:
-    """Checking Sentry Disable login"""
+    """Return whether Sentry logging is disabled via the env flag."""
     return os.getenv("OPENSRE_SENTRY_LOGGING_DISABLED", "0") == "1"
 
 
@@ -442,7 +442,7 @@ def init_sentry(entrypoint: str | None = None) -> None:
     ``DO_NOT_TRACK=1`` to disable both Sentry and PostHog product analytics.
     ``OPENSRE_SENTRY_DISABLED=1`` disables Sentry only;
     ``OPENSRE_SENTRY_LOGGING_DISABLED=1`` disables automatic
-        logger forwarding while preserving explicit ``capture_exception`` calls.
+    logger forwarding while preserving explicit ``capture_exception`` calls.
     ``OPENSRE_ANALYTICS_DISABLED=1`` disables PostHog only.
 
     ``entrypoint`` identifies the calling surface (``cli``, ``webapp``,
@@ -507,3 +507,4 @@ def capture_exception(
                 for key, value in extra.items():
                     scope.set_extra(key, value)
             sentry_sdk.capture_exception(exc)
+  
