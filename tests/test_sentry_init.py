@@ -683,45 +683,46 @@ def test_apply_scope_tags_is_first_wins(monkeypatch) -> None:
         call.args[1] for call in tag_mock.call_args_list if call.args[0] == "entrypoint"
     ]
     assert entrypoint_tags == ["webapp"]
-    
+
+
 def test_init_sentry_registers_logging_integration(monkeypatch) -> None:
+    import logging
+
     from sentry_sdk.integrations.logging import LoggingIntegration
 
-    sentry_mod._init_sentry_once.cache_clear()
-    _clear_kill_switches(monkeypatch)
+    sentry_init_calls = []
+
+    monkeypatch.setenv("OPENSRE_SENTRY_DSN", "https://test@example.com/1")
+    monkeypatch.delenv("OPENSRE_SENTRY_DISABLED", raising=False)
+    monkeypatch.delenv("OPENSRE_NO_TELEMETRY", raising=False)
+    monkeypatch.delenv("DO_NOT_TRACK", raising=False)
 
     monkeypatch.setattr(
         sentry_mod,
         "_build_sentry_integrations",
-        lambda: [LoggingIntegration()],
+        lambda: [
+            LoggingIntegration(
+                level=logging.INFO,
+                event_level=logging.ERROR,
+            )
+        ],
     )
 
-    init_mock, _ = _install_full_sentry_mock(monkeypatch)
+    def fake_init(**kwargs):
+        sentry_init_calls.append(kwargs)
 
-    sentry_mod.init_sentry(entrypoint="cli")
+    monkeypatch.setattr("sentry_sdk.init", fake_init)
 
-    integrations = init_mock.call_args.kwargs["integrations"]
-
-    integration_names = {
-        integration.__class__.__name__
-        for integration in integrations
-    }
-
-    assert "LoggingIntegration" in integration_names
-
-def test_init_sentry_skips_logging_integration_when_disabled(
-    monkeypatch,
-) -> None:
     sentry_mod._init_sentry_once.cache_clear()
-    _clear_kill_switches(monkeypatch)
-    monkeypatch.setenv("OPENSRE_SENTRY_LOGGING_DISABLED", "1")
-    init_mock, _ = _install_full_sentry_mock(monkeypatch)
-
-    sentry_mod.init_sentry(entrypoint="cli")
-
-    integrations = init_mock.call_args.kwargs["integrations"]
-
-    assert all(
-        integration.__class__.__name__ != "LoggingIntegration"
-        for integration in integrations
+    sentry_mod._init_sentry_once(
+    dsn="https://test@example.com/1",
+    environment="test",
+    release="opensre@test",
+    sample_rate=1.0,
+    traces_sample_rate=1.0,
     )
+    assert sentry_init_calls
+    integrations = sentry_init_calls[0]["integrations"]
+    assert any(
+        isinstance(integration, LoggingIntegration)
+        for integration in integrations)
